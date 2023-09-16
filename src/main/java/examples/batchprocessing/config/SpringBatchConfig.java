@@ -7,8 +7,9 @@ import lombok.AllArgsConstructor;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
-import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
-import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+
+import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
@@ -21,28 +22,27 @@ import org.springframework.batch.item.file.transform.DelimitedLineTokenizer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.transaction.PlatformTransactionManager;
 
-@AutoConfiguration
-@EnableBatchProcessing
+@Configuration
 @AllArgsConstructor
 public class SpringBatchConfig {
 
-    @Autowired
-    private JobBuilderFactory jobBuilderFactory;
+//    @Autowired
+//    private JobBuilderFactory jobBuilderFactory;
 
-
-    @Autowired
-    private StepBuilderFactory stepBuilderFactory;
-
+// these has been deprecated
+//    @Autowired
+//    private StepBuilderFactory stepBuilderFactory;
+//
     @Autowired
     private CustomerRepository customerRepository;
 
-    public SpringBatchConfig() {
 
-    }
     //ItemReader
 
     @Bean
@@ -73,7 +73,7 @@ public class SpringBatchConfig {
     }
 
     @Bean
-    public ItemProcessor<Customer,Customer> processor() {
+    public ItemProcessor<Customer, Customer> processor() {
         return null;
     }
 
@@ -85,9 +85,25 @@ public class SpringBatchConfig {
         return writer;
     }
 
+    //    @Bean
+//    public Step step1() {
+//        return stepBuilderFactory.get("csv-step").<Customer, Customer>chunk(10)
+//                .reader(reader())
+//                .processor(processor())
+//                .writer(writer())
+//                .taskExecutor(taskExecutor())
+//                .build();
+//    }
+//
+//    @Bean
+//    public Job runJob() {
+//        return jobBuilderFactory.get("importCustomers")
+//                .flow(step1()).end().build();
+//
+//    }
     @Bean
-    public Step step1() {
-        return stepBuilderFactory.get("csv-step").<Customer, Customer>chunk(10)
+    public Step step1(JobRepository jobRepository,PlatformTransactionManager platformTransactionManager) {
+        return new StepBuilder("csv-step",jobRepository).<Customer, Customer>chunk(10,platformTransactionManager)
                 .reader(reader())
                 .processor(processor())
                 .writer(writer())
@@ -96,32 +112,27 @@ public class SpringBatchConfig {
     }
 
     @Bean
-    public Job runJob() {
-        return jobBuilderFactory.get("importCustomers")
-                .flow(step1()).end().build();
+    public Job runJob(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager) {
+        return new JobBuilder("importCustomers",jobRepository)
+                .flow(step1(jobRepository,platformTransactionManager)).end().build();
 
     }
 
     @Bean
     public TaskExecutor taskExecutor() {
         SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
-        asyncTaskExecutor.setConcurrencyLimit(10);
+        asyncTaskExecutor.setConcurrencyLimit(20);
         return asyncTaskExecutor;
     }
-
 
 
     //ItemProcessor
     //ItemWriter
 
 
-
     //Step
     //JOB
     //JobScheduler
-
-
-
 
 
 }

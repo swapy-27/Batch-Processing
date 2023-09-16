@@ -22,12 +22,9 @@ public class JobController {
 
     @Autowired
     private JobLauncher jobLauncher;
-
+    @Autowired
     private Job job;
 
-    public JobController(){
-        this.job = new  SpringBatchConfig().runJob();
-    }
     @PostMapping("/importCustomers")
     public void importCsvToDBJob() {
         JobParameters jobParameters = new JobParametersBuilder()
