@@ -2,6 +2,8 @@ package examples.batchprocessing.config;
 
 
 import examples.batchprocessing.entities.Customer;
+
+import examples.batchprocessing.partitioning.ColumnRangePartitioner;
 import examples.batchprocessing.repositories.CustomerRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.batch.core.Job;
@@ -9,6 +11,8 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.partition.PartitionHandler;
+import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
 import org.springframework.batch.item.ItemProcessor;
@@ -26,16 +30,17 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.transaction.PlatformTransactionManager;
 
 @Configuration
 @AllArgsConstructor
 public class SpringBatchConfig {
-
+// these has been deprecated
 //    @Autowired
 //    private JobBuilderFactory jobBuilderFactory;
 
-// these has been deprecated
+
 //    @Autowired
 //    private StepBuilderFactory stepBuilderFactory;
 //
@@ -76,14 +81,18 @@ public class SpringBatchConfig {
     public ItemProcessor<Customer, Customer> processor() {
         return null;
     }
-
     @Bean
-    public RepositoryItemWriter<Customer> writer() {
-        RepositoryItemWriter<Customer> writer = new RepositoryItemWriter<>();
-        writer.setRepository(customerRepository);
-        writer.setMethodName("save");
-        return writer;
+    public CustomerWriter customerWriter(){
+        return new CustomerWriter();
     }
+    // we are parsing not in single rows now
+//    @Bean
+//    public RepositoryItemWriter<Customer> writer() {
+//        RepositoryItemWriter<Customer> writer = new RepositoryItemWriter<>();
+//        writer.setRepository(customerRepository);
+//        writer.setMethodName("save");
+//        return writer;
+//    }
 
     //    @Bean
 //    public Step step1() {
@@ -102,37 +111,64 @@ public class SpringBatchConfig {
 //
 //    }
     @Bean
-    public Step step1(JobRepository jobRepository,PlatformTransactionManager platformTransactionManager) {
-        return new StepBuilder("csv-step",jobRepository).<Customer, Customer>chunk(10,platformTransactionManager)
+    public ColumnRangePartitioner columnRangePartition(){
+        return new ColumnRangePartitioner();
+    }
+
+    @Bean
+    public PartitionHandler partitionHandler(JobRepository jobRepository,PlatformTransactionManager platformTransactionManager){
+        TaskExecutorPartitionHandler taskExecutorPartitionHandler = new TaskExecutorPartitionHandler();
+
+        taskExecutorPartitionHandler.setGridSize(4);
+        taskExecutorPartitionHandler.setTaskExecutor(taskExecutor());
+        taskExecutorPartitionHandler.setStep(slaveStep(jobRepository,platformTransactionManager));
+
+        return taskExecutorPartitionHandler;
+    }
+
+    public Step slaveStep( JobRepository jobRepository,PlatformTransactionManager platformTransactionManager){
+        return new StepBuilder("slaveStep",jobRepository).<Customer, Customer>chunk(10,platformTransactionManager)
                 .reader(reader())
                 .processor(processor())
-                .writer(writer())
-                .taskExecutor(taskExecutor())
+                .writer(customerWriter())
+                .build();
+    }
+
+    @Bean
+    public Step masterStep(JobRepository jobRepository,PlatformTransactionManager platformTransactionManager) {
+        return new StepBuilder("masterStep",jobRepository)
+                .partitioner(slaveStep(jobRepository,platformTransactionManager).getName(),columnRangePartition())
+                .partitionHandler(partitionHandler(jobRepository,platformTransactionManager))
                 .build();
     }
 
     @Bean
     public Job runJob(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager) {
         return new JobBuilder("importCustomers",jobRepository)
-                .flow(step1(jobRepository,platformTransactionManager)).end().build();
+                .flow(masterStep(jobRepository,platformTransactionManager)).end().build();
 
     }
+
+
+    // we don't want 20 threads for this scenario
+//    @Bean
+//    public TaskExecutor taskExecutor() {
+//        SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
+//        asyncTaskExecutor.setConcurrencyLimit(20);
+//        return asyncTaskExecutor;
+//    }
 
     @Bean
     public TaskExecutor taskExecutor() {
-        SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
-        asyncTaskExecutor.setConcurrencyLimit(20);
-        return asyncTaskExecutor;
+
+        ThreadPoolTaskExecutor threadPoolTaskExecutor = new ThreadPoolTaskExecutor();
+
+        threadPoolTaskExecutor.setMaxPoolSize(4);
+        threadPoolTaskExecutor.setCorePoolSize(4);
+        threadPoolTaskExecutor.setQueueCapacity(4);
+
+        return threadPoolTaskExecutor;
     }
-
-
-    //ItemProcessor
-    //ItemWriter
-
-
-    //Step
-    //JOB
-    //JobScheduler
 
 
 }
