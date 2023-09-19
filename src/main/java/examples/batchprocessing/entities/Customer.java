@@ -29,8 +29,9 @@ public class Customer {
     private String contactNo;
     @Column(name = "COUNTRY")
     private String country;
-    @Column(name = "DOB")
-    private String dob;
+//    @Column(name = "DOB")
+//    private String dob;
 
-
+    @Column(name = "AGE")
+    private int age;
 }

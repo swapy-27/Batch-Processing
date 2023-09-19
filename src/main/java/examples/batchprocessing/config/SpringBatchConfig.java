@@ -3,10 +3,12 @@ package examples.batchprocessing.config;
 
 import examples.batchprocessing.entities.Customer;
 
+import examples.batchprocessing.listeners.StepSkipListener;
 import examples.batchprocessing.partitioning.ColumnRangePartitioner;
 import examples.batchprocessing.repositories.CustomerRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.SkipListener;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 
@@ -15,8 +17,10 @@ import org.springframework.batch.core.partition.PartitionHandler;
 import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.core.step.skip.SkipPolicy;
 import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemReader;
+import org.springframework.batch.item.ParseException;
 import org.springframework.batch.item.data.RepositoryItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.LineMapper;
@@ -53,7 +57,7 @@ public class SpringBatchConfig {
     @Bean
     public FlatFileItemReader<Customer> reader() {
         FlatFileItemReader<Customer> itemReader = new FlatFileItemReader<>();
-        itemReader.setResource(new FileSystemResource("src/main/resources/customers.csv"));
+        itemReader.setResource(new FileSystemResource("src/main/resources/faultTolerance.csv"));
         itemReader.setName("csvReader");
         itemReader.setLinesToSkip(1);
         itemReader.setLineMapper(lineMapper());
@@ -66,7 +70,7 @@ public class SpringBatchConfig {
         DelimitedLineTokenizer lineTokenizer = new DelimitedLineTokenizer();
         lineTokenizer.setDelimiter(",");
         lineTokenizer.setStrict(false);
-        lineTokenizer.setNames("id", "firstName", "lastName", "email", "gender", "contactNo", "country", "dob");
+        lineTokenizer.setNames("id", "firstName", "lastName", "email", "gender", "contactNo", "country", "age");
 
         BeanWrapperFieldSetMapper<Customer> fieldSetMapper = new BeanWrapperFieldSetMapper<>();
         fieldSetMapper.setTargetType(Customer.class);
@@ -77,10 +81,16 @@ public class SpringBatchConfig {
 
     }
 
-    @Bean
-    public ItemProcessor<Customer, Customer> processor() {
-        return null;
-    }
+//    @Bean
+//    public ItemProcessor<Customer, Customer> processor() {
+//        return null;
+//    }
+
+  @Bean
+  public ItemProcessor<Customer,Customer> processor(){
+        return new CustomerProcessor();
+  }
+
     @Bean
     public CustomerWriter customerWriter(){
         return new CustomerWriter();
@@ -131,9 +141,22 @@ public class SpringBatchConfig {
                 .reader(reader())
                 .processor(processor())
                 .writer(customerWriter())
+
+                .faultTolerant().skipPolicy(skipPolicy()).listener(skipListener())
+//
+//                .faultTolerant()
+//                .skipLimit(100)
+//                .skip(ParseException.class)
                 .build();
     }
-
+    @Bean
+    public SkipPolicy skipPolicy(){
+        return new ExceptionSkipPolicy();
+    }
+    @Bean
+    public SkipListener<Customer, Number> skipListener(){
+        return new StepSkipListener();
+    }
     @Bean
     public Step masterStep(JobRepository jobRepository,PlatformTransactionManager platformTransactionManager) {
         return new StepBuilder("masterStep",jobRepository)
